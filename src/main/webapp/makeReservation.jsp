@@ -2,9 +2,7 @@
 <%@ page import="java.io.*,java.util.*,java.sql.*"%>
 <%@ page import="java.io.PrintWriter" %>
 <%@ page language="java" contentType="text/html; charset=ISO-8859-1"
-	pageEncoding="ISO-8859-1" import="com.cs336.pkg.*"%>
-<%@ page import="java.io.*,java.util.*,java.sql.*"%>
-<%@ page import="javax.servlet.http.*,javax.servlet.*"%>
+    pageEncoding="ISO-8859-1" import="com.cs336.pkg.*"%>
 <!DOCTYPE html>
 <html>
 <head>
@@ -22,10 +20,8 @@
         String passenger = request.getParameter("passenger");
 
         // Fare calculation variables
-        double baseFare = 50.0;
+        double baseFare = 0.0; // Initialize baseFare to 0
         int totalStops = 0;
-        int originOrder = 0;
-        int destinationOrder = 0;
         double discountMultiplier = 1.0;
 
         // Set discount multiplier based on passenger type
@@ -46,29 +42,47 @@
             ApplicationDB db = new ApplicationDB();
             conn = db.getConnection();
 
-            // Get total stops for the route
-            stmt = conn.prepareStatement("SELECT COUNT(*) FROM RouteStops WHERE name = ?");
+            // Get baseFare from TransitLine
+            stmt = conn.prepareStatement("SELECT baseFare FROM TransitLine WHERE name = ?");
             stmt.setString(1, route);
             rs = stmt.executeQuery();
             if (rs.next()) {
-                totalStops = rs.getInt(1);
+                baseFare = rs.getDouble("baseFare");
+            } else {
+                throw new Exception("Base fare not found for route: " + route);
             }
             rs.close();
             stmt.close();
 
-            // Get stop orders for origin and destination
-            stmt = conn.prepareStatement("SELECT stopOrder FROM RouteStops WHERE name = ? AND sid = ?");
+            // Get total stops for the route based on unique stop times
+            stmt = conn.prepareStatement("SELECT COUNT(DISTINCT aTime) AS totalStops FROM RouteStops WHERE name = ?");
             stmt.setString(1, route);
+            rs = stmt.executeQuery();
+            if (rs.next()) {
+                totalStops = rs.getInt("totalStops");
+            }
+            rs.close();
+            stmt.close();
+
+            // Get arrival times for origin and destination
+            String originTime = null;
+            String destinationTime = null;
+            stmt = conn.prepareStatement("SELECT aTime FROM RouteStops WHERE name = ? AND sid = ? ORDER BY aTime ASC");
+            stmt.setString(1, route);
+
+            // Get origin stop arrival time
             stmt.setString(2, originStop);
             rs = stmt.executeQuery();
             if (rs.next()) {
-                originOrder = rs.getInt("stopOrder");
+                originTime = rs.getString("aTime");
             }
             rs.close();
+
+            // Get destination stop arrival time
             stmt.setString(2, destinationStop);
             rs = stmt.executeQuery();
             if (rs.next()) {
-                destinationOrder = rs.getInt("stopOrder");
+                destinationTime = rs.getString("aTime");
             }
             rs.close();
             stmt.close();
@@ -76,12 +90,31 @@
             // Calculate fare
             double fare;
             if ("two-way".equals(type)) {
-                // Two-way trip: Base fare is $100
-                fare = 100.0 * discountMultiplier;
+                // Two-way trip: Base fare is twice the baseFare
+                fare = 2 * baseFare * discountMultiplier;
             } else {
                 // One-way trip: Calculate fare based on stops
-                int stopDiff = Math.abs(destinationOrder - originOrder);
-                fare = (baseFare / (totalStops - 1)) * stopDiff * discountMultiplier;
+                // Determine the earlier and later times for the range
+                String startTime = originTime.compareTo(destinationTime) <= 0 ? originTime : destinationTime;
+                String endTime = originTime.compareTo(destinationTime) > 0 ? originTime : destinationTime;
+
+                // Calculate stops between (inclusive of origin and destination stops)
+                stmt = conn.prepareStatement(
+                    "SELECT COUNT(*) AS stopsBetween FROM RouteStops WHERE name = ? AND aTime BETWEEN ? AND ?");
+                stmt.setString(1, route);
+                stmt.setString(2, startTime);
+                stmt.setString(3, endTime);
+                rs = stmt.executeQuery();
+
+                int stopsTraveled = 0;
+                if (rs.next()) {
+                    stopsTraveled = rs.getInt("stopsBetween") - 1; // Exclude starting stop if needed
+                }
+                rs.close();
+                stmt.close();
+
+                // Calculate fare
+                fare = (baseFare / (totalStops - 1)) * stopsTraveled * discountMultiplier;
             }
 
             // Insert reservation into the database
@@ -98,7 +131,7 @@
             out.println("<p>Reservation Number: " + reservationNumber + "</p>");
             out.println("<p>Total Fare: $" + String.format("%.2f", fare) + "</p>");
         } catch (Exception e) {
-        	e.printStackTrace(new PrintWriter(out)); // Use PrintWriter for stack trace
+            e.printStackTrace(new PrintWriter(out)); // Use PrintWriter for stack trace
             out.println("<h3>Error occurred while applying the discount.</h3>");
         } finally {
             // Close resources
