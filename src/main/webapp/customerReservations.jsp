@@ -75,7 +75,7 @@
                 ApplicationDB db = new ApplicationDB();
                 Connection conn = db.getConnection();
                 Statement stmt = conn.createStatement();
-                ResultSet rs = stmt.executeQuery("SELECT name FROM TransitLine");
+                ResultSet rs = stmt.executeQuery("SELECT DISTINCT name FROM TransitLine");
                 while (rs.next()) {
                     out.println("<option value='" + rs.getString("name") + "'>" + rs.getString("name") + "</option>");
                 }
@@ -164,4 +164,7 @@
         <input type="submit" value="View Reservations">
     </form>
 </body>
+<a href="browseSchedules.jsp" style="text-decoration: none; color: blue; font-size: 18px;">
+    Browse Train Schedules
+</a>
 </html>
