@@ -33,7 +33,7 @@
         // Display reservations for the user
         if (username != null && !username.isEmpty()) {
             stmt = conn.prepareStatement(
-                "SELECT r.resNumber, r.date, r.totalFare, r.line " +
+                "SELECT r.resNumber, r.date, r.totalFare, r.line, r.startStop, r.endStop, r.discountType " +
                 "FROM Reservation r " +
                 "WHERE r.passenger = ?"
             );
@@ -42,15 +42,21 @@
 
             out.println("<h3>Reservations for " + username + ":</h3>");
             out.println("<table border='1'>");
-            out.println("<tr><th>Reservation Number</th><th>Date</th><th>Total Fare</th><th>Train Line</th><th>Action</th></tr>");
+            out.println("<tr><th>Reservation Number</th><th>Date</th><th>Total Fare</th><th>Train Line</th><th>Origin</th><th>Destination</th><th>Discount Type</th><th>Action</th></tr>");
             while (rs.next()) {
                 String resNumber = rs.getString("resNumber");
-                String line = rs.getString("line"); // Fetch the train line
+                String line = rs.getString("line");
+                String startStop = rs.getString("startStop");
+                String endStop = rs.getString("endStop");
+                String discountType = rs.getString("discountType");
                 out.println("<tr>");
                 out.println("<td>" + resNumber + "</td>");
                 out.println("<td>" + rs.getDate("date") + "</td>");
                 out.println("<td>$" + rs.getDouble("totalFare") + "</td>");
                 out.println("<td>" + line + "</td>");
+                out.println("<td>" + startStop + "</td>");
+                out.println("<td>" + endStop + "</td>");
+                out.println("<td>" + discountType + "</td>");
                 out.println("<td>");
                 out.println("<form method='post' action='' style='display:inline;'>");
                 out.println("<input type='hidden' name='username' value='" + username + "'>");
