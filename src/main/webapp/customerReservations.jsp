@@ -100,7 +100,7 @@
                 <%
                     PreparedStatement stopStmt = conn.prepareStatement(
                         "SELECT rs.sid, rs.name AS routeName, s.name AS stationName " +
-                        "FROM RouteStops rs JOIN Station s ON rs.sid = s.sid ORDER BY rs.name, rs.stopOrder"
+                        "FROM RouteStops rs JOIN Station s ON rs.sid = s.sid ORDER BY rs.name, rs.dTime"
                     );
                     ResultSet stopRs = stopStmt.executeQuery();
                     while (stopRs.next()) {
@@ -120,7 +120,7 @@
                 <%
                     stopStmt = conn.prepareStatement(
                         "SELECT rs.sid, rs.name AS routeName, s.name AS stationName " +
-                        "FROM RouteStops rs JOIN Station s ON rs.sid = s.sid ORDER BY rs.name, rs.stopOrder"
+                        "FROM RouteStops rs JOIN Station s ON rs.sid = s.sid ORDER BY rs.name, rs.dTime"
                     );
                     stopRs = stopStmt.executeQuery();
                     while (stopRs.next()) {
