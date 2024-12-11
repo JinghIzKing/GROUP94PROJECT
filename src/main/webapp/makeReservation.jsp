@@ -20,18 +20,15 @@
 
         double baseFare = 0.0;
         double discountMultiplier = 1.0;
+        String startStop = null, endStop = null;
 
         // Set discount multiplier
-        switch (discountType) {
-            case "child":
-                discountMultiplier = 0.75;
-                break;
-            case "elder":
-                discountMultiplier = 0.65;
-                break;
-            case "disabled":
-                discountMultiplier = 0.5;
-                break;
+        if ("child".equals(discountType)) {
+            discountMultiplier = 0.75;
+        } else if ("elder".equals(discountType)) {
+            discountMultiplier = 0.65;
+        } else if ("disabled".equals(discountType)) {
+            discountMultiplier = 0.5;
         }
 
         Connection conn = null;
@@ -57,16 +54,18 @@
             double fare = 0.0;
 
             if ("two-way".equals(type)) {
-                // Calculate fare for two-way trips
+                // Two-way trip: Use base fare multiplied by 2 and apply discount
                 fare = 2 * baseFare * discountMultiplier;
-            } else if ("one-way".equals(type)) {
-                // Validate originStop and destinationStop for one-way trips
-                if (originStop == null || destinationStop == null) {
-                    out.println("<h3>Error: Missing origin or destination for one-way trip. Please fill out the form completely.</h3>");
-                    out.println("<a href='customerReservations.jsp'>Back to Reservations</a>");
-                    return;
+                stmt = conn.prepareStatement("SELECT origin, destination FROM TransitLine WHERE name = ?");
+                stmt.setString(1, route);
+                rs = stmt.executeQuery();
+                if (rs.next()) {
+                    startStop = rs.getString("origin");
+                    endStop = rs.getString("destination");
                 }
-
+                rs.close();
+                stmt.close();
+            } else if ("one-way".equals(type)) {
                 // Get total stops for the route
                 int totalStops = 0;
                 stmt = conn.prepareStatement("SELECT COUNT(DISTINCT aTime) AS totalStops FROM RouteStops WHERE name = ?");
@@ -118,17 +117,24 @@
                 rs.close();
                 stmt.close();
 
-                // Calculate fare
                 fare = baseFare * ((double) stopsTraveled / (totalStops - 1)) * discountMultiplier;
+
+                // Set startStop and endStop for one-way trip
+                startStop = originStop;
+                endStop = destinationStop;
             }
 
             // Insert reservation
             String reservationNumber = UUID.randomUUID().toString().substring(0, 8);
-            stmt = conn.prepareStatement("INSERT INTO Reservation (resNumber, date, totalFare, passenger, line) VALUES (?, NOW(), ?, ?, ?)");
+            stmt = conn.prepareStatement(
+                "INSERT INTO Reservation (resNumber, date, totalFare, passenger, line, startStop, endStop, discountType) VALUES (?, NOW(), ?, ?, ?, ?, ?, ?)");
             stmt.setString(1, reservationNumber);
             stmt.setDouble(2, fare);
             stmt.setString(3, passenger);
             stmt.setString(4, route);
+            stmt.setString(5, startStop);
+            stmt.setString(6, endStop);
+            stmt.setString(7, discountType); // Add discountType to reservation
             stmt.executeUpdate();
             stmt.close();
 
