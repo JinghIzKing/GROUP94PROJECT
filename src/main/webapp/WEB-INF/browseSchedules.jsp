@@ -1,187 +1,194 @@
-<%@ page language="java" import="java.sql.*" %>
-<%@ page import="java.io.*,java.util.*,java.sql.*"%>
-<%@ page import="javax.servlet.http.*,javax.servlet.*"%>
-<%@ page language="java" import="java.sql.*, java.util.UUID" %>
-<%@ page import="java.io.*,java.util.*,java.sql.*"%>
-<%@ page import="java.io.PrintWriter" %>
-<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
-    pageEncoding="ISO-8859-1" import="com.cs336.pkg.*"%>
-<%@ page language="java" import="java.sql.*" %>
+<%@ page import="java.io.*,java.util.*,java.sql.*" %>
+<%@ page import="javax.servlet.http.*,javax.servlet.*" %>
+<%@ page import="com.cs336.pkg.ApplicationDB" %>
+<%@ page language="java" contentType="text/html; charset=UTF-8"%>
+<%@ page session="true" %>
+<%
+    String username = (String) session.getAttribute("username");
+    if (username == null) {
+        username = "placeholder";
+    }
+
+    String fName = "Guest";
+    Connection conn = null;
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+    List<String> stationNames = new ArrayList<>();
+
+    String sortBy = request.getParameter("sortBy");
+    if (sortBy == null) sortBy = "firstStopTime";
+    String origin = request.getParameter("origin");
+    String destination = request.getParameter("destination");
+    String travelDate = request.getParameter("travelDate");
+
+    try {
+        ApplicationDB db = new ApplicationDB();
+        conn = db.getConnection();
+        System.out.println("Database connection established.");
+
+        // Fetch user's first name
+        String userQuery = "SELECT fName FROM user WHERE username = ?";
+        stmt = conn.prepareStatement(userQuery);
+        stmt.setString(1, username);
+        rs = stmt.executeQuery();
+        if (rs.next()) {
+            fName = rs.getString("fName");
+        }
+        rs.close();
+        stmt.close();
+
+        // Fetch station names for dropdowns
+        String stationQuery = "SELECT DISTINCT name FROM station ORDER BY name";
+        stmt = conn.prepareStatement(stationQuery);
+        rs = stmt.executeQuery();
+        while (rs.next()) {
+            stationNames.add(rs.getString("name"));
+        }
+        rs.close();
+        stmt.close();
+
+        // Build query
+        StringBuilder scheduleQuery = new StringBuilder("""
+            SELECT 
+                rs.name AS transitLine,
+                t.tName AS trainName,
+                GROUP_CONCAT(s.name ORDER BY rs.aTime SEPARATOR ' -> ') AS routeStops,
+                MIN(rs.aTime) AS firstStopTime,
+                MAX(rs.dTime) AS lastStopTime,
+                tl.baseFare,
+                DATE(rs.aTime) AS travelDate
+            FROM routestops rs
+            JOIN station s ON rs.sid = s.sid
+            JOIN train t ON rs.tid = t.tid
+            JOIN transitline tl ON rs.tid = tl.tid AND rs.name = tl.name
+            WHERE 1=1
+        """);
+
+        // Add filters
+        if (travelDate != null && !travelDate.isEmpty()) {
+            scheduleQuery.append(" AND DATE(rs.aTime) = ? ");
+        }
+
+        // Add grouping and sorting
+        scheduleQuery.append("""
+            GROUP BY rs.name, t.tName, tl.baseFare, DATE(rs.aTime)
+        """);
+        scheduleQuery.append(" ORDER BY ").append(sortBy).append(" ");
+
+        System.out.println("Final SQL Query: " + scheduleQuery.toString()); // Debugging log
+
+        stmt = conn.prepareStatement(scheduleQuery.toString());
+        int paramIndex = 1;
+        if (travelDate != null && !travelDate.isEmpty()) {
+            stmt.setString(paramIndex++, travelDate);
+        }
+
+        rs = stmt.executeQuery();
+        System.out.println("Query executed successfully.");
+%>
 <!DOCTYPE html>
 <html>
-<a href="customerReservations.jsp" style="text-decoration: none; color: blue; font-size: 18px;">
-    Go to Customer Reservations
-</a>
-
 <head>
-    <title>Browse and Search Train Schedules</title>
-    <style>
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        table, th, td {
-            border: 1px solid black;
-        }
-        th, td {
-            text-align: center;
-            padding: 10px;
-        }
-    </style>
+    <title>Browse Train Schedules</title>
 </head>
 <body>
-    <h1>Browse and Search Train Schedules</h1>
+    <h1>Welcome <%= fName %>!</h1>
+    <h2>Train Schedules</h2>
 
-    <!-- Search Form -->
-    <form method="get" action="browseSchedules.jsp">
+    <!-- Filtering and Sorting Form -->
+    <form action="browseSchedules.jsp" method="get">
         <label for="origin">Origin:</label>
         <select name="origin" id="origin">
             <option value="">-- Select Origin --</option>
-            <% 
-                Connection conn = null;
-                PreparedStatement stmt = null;
-                ResultSet rs = null;
-                try {
-                    ApplicationDB db = new ApplicationDB();
-                    conn = db.getConnection();
-                    stmt = conn.prepareStatement("SELECT DISTINCT origin FROM TransitLine ORDER BY origin");
-                    rs = stmt.executeQuery();
-                    while (rs.next()) {
-                        String origin = rs.getString("origin");
-                        out.println("<option value='" + origin + "'>" + origin + "</option>");
-                    }
-                } finally {
-                    if (rs != null) rs.close();
-                    if (stmt != null) stmt.close();
-                    if (conn != null) conn.close();
-                }
-            %>
+            <% for (String station : stationNames) { %>
+                <option value="<%= station %>" <%= station.equals(origin) ? "selected" : "" %>><%= station %></option>
+            <% } %>
         </select>
-        <br>
-
         <label for="destination">Destination:</label>
         <select name="destination" id="destination">
             <option value="">-- Select Destination --</option>
-            <% 
-                Connection connDestination = null;
-                PreparedStatement stmtDestination = null;
-                ResultSet rsDestination = null;
-                try {
-                    ApplicationDB db = new ApplicationDB();
-                    connDestination = db.getConnection();
-                    stmtDestination = connDestination.prepareStatement("SELECT DISTINCT destination FROM TransitLine ORDER BY destination");
-                    rsDestination = stmtDestination.executeQuery();
-                    while (rsDestination.next()) {
-                        String destination = rsDestination.getString("destination");
-                        out.println("<option value='" + destination + "'>" + destination + "</option>");
-                    }
-                } finally {
-                    if (rsDestination != null) rsDestination.close();
-                    if (stmtDestination != null) stmtDestination.close();
-                    if (connDestination != null) connDestination.close();
-                }
-            %>
+            <% for (String station : stationNames) { %>
+                <option value="<%= station %>" <%= station.equals(destination) ? "selected" : "" %>><%= station %></option>
+            <% } %>
         </select>
-        <br>
+        <label for="travelDate">Travel Date:</label>
+        <input type="date" name="travelDate" value="<%= travelDate %>">
 
-        <label for="date">Date:</label>
-        <input type="date" name="date" id="date">
-        <br>
-
-        <label for="sort">Sort By:</label>
-        <select name="sort" id="sort">
-            <option value="originTime">Departure Time</option>
-            <option value="destTime">Arrival Time</option>
-            <option value="baseFare">Fare</option>
+        <label for="sortBy">Sort By:</label>
+        <select name="sortBy" id="sortBy">
+            <option value="firstStopTime" <%= "firstStopTime".equals(sortBy) ? "selected" : "" %>>Arrival Time</option>
+            <option value="lastStopTime" <%= "lastStopTime".equals(sortBy) ? "selected" : "" %>>Departure Time</option>
+            <option value="baseFare" <%= "baseFare".equals(sortBy) ? "selected" : "" %>>Fare</option>
         </select>
-        <br>
 
-        <input type="submit" value="Search">
+        <button type="submit">Filter</button>
     </form>
 
-    <!-- Results Section -->
-    <h2>Train Schedules</h2>
-    <table>
+    <!-- Train Schedule Table -->
+    <table border="1">
         <tr>
-            <th>Route Name</th>
-            <th>Origin</th>
-            <th>Destination</th>
-            <th>Departure Time</th>
-            <th>Arrival Time</th>
-            <th>Base Fare</th>
-            <th>Stops</th>
+            <th>Transit Line</th>
+            <th>Train Name</th>
+            <th>Route</th>
+            <th>First Stop Time</th>
+            <th>Last Stop Time</th>
+            <th>Fare</th>
+            <th>Select</th>
         </tr>
-        <%
-            // Retrieve search parameters
-            String searchOrigin = request.getParameter("origin");
-            String searchDestination = request.getParameter("destination");
-            String searchDate = request.getParameter("date");
-            String sortBy = request.getParameter("sort");
+        <% boolean hasSchedules = false; %>
+        <% while (rs.next()) { %>
+            <% 
+                String routeStops = rs.getString("routeStops");
+                if (routeStops != null && !routeStops.isEmpty()) {
+                    String[] stops = routeStops.split(" -> ");
+                    if (stops.length > 0) {
+                        String firstStop = stops[0];
+                        String lastStop = stops[stops.length - 1];
 
-            // Build the query
-            String query = "SELECT * FROM TransitLine";
-            String whereClause = "";
-            if (searchOrigin != null && !searchOrigin.isEmpty()) {
-                whereClause += " origin = '" + searchOrigin + "'";
-            }
-            if (searchDestination != null && !searchDestination.isEmpty()) {
-                if (!whereClause.isEmpty()) whereClause += " AND";
-                whereClause += " destination = '" + searchDestination + "'";
-            }
-            if (searchDate != null && !searchDate.isEmpty()) {
-                if (!whereClause.isEmpty()) whereClause += " AND";
-                whereClause += " DATE(originTime) = '" + searchDate + "'";
-            }
-            if (!whereClause.isEmpty()) query += " WHERE " + whereClause;
-            if (sortBy != null && !sortBy.isEmpty()) {
-                query += " ORDER BY " + sortBy;
-            }
-
-            try {
-                ApplicationDB db = new ApplicationDB();
-                conn = db.getConnection();
-                stmt = conn.prepareStatement(query);
-                rs = stmt.executeQuery();
-                while (rs.next()) {
-                    String name = rs.getString("name");
-                    String origin = rs.getString("origin");
-                    String destination = rs.getString("destination");
-                    String originTime = rs.getString("originTime");
-                    String destTime = rs.getString("destTime");
-                    float baseFare = rs.getFloat("baseFare");
-
-                    // Fetch stops
-                    PreparedStatement stopStmt = conn.prepareStatement(
-                        "SELECT s.name FROM RouteStops rs JOIN Station s ON rs.sid = s.sid WHERE rs.name = ? ORDER BY rs.aTime"
-                    );
-                    stopStmt.setString(1, name);
-                    ResultSet stopRs = stopStmt.executeQuery();
-                    StringBuilder stops = new StringBuilder();
-                    while (stopRs.next()) {
-                        stops.append(stopRs.getString("name")).append(", ");
+                        if ((origin == null || origin.isEmpty() || origin.equals(firstStop)) &&
+                            (destination == null || destination.isEmpty() || destination.equals(lastStop))) {
+                                hasSchedules = true;
+            %>
+            <tr>
+                <td><%= rs.getString("transitLine") %></td>
+                <td><%= rs.getString("trainName") %></td>
+                <td><%= routeStops %></td>
+                <td><%= rs.getTimestamp("firstStopTime") %></td>
+                <td><%= rs.getTimestamp("lastStopTime") %></td>
+                <td><%= rs.getFloat("baseFare") %></td>
+                <td>
+                    <form action="makeOneWayReservation.jsp" method="post">
+                        <input type="hidden" name="selectedSchedule" value="<%= rs.getString("transitLine") + "," + rs.getString("trainName") + "," + routeStops + "," + rs.getTimestamp("firstStopTime") + "," + rs.getTimestamp("lastStopTime") + "," + rs.getFloat("baseFare") + "," + rs.getDate("travelDate") %>">
+                        <button type="submit">Make One-Way Reservation</button>
+                    </form>
+                    <form action="makeTwoWayReservation.jsp" method="post">
+                        <input type="hidden" name="selectedSchedule" value="<%= rs.getString("transitLine") + "," + rs.getString("trainName") + "," + routeStops + "," + rs.getTimestamp("firstStopTime") + "," + rs.getTimestamp("lastStopTime") + "," + rs.getFloat("baseFare") + "," + rs.getDate("travelDate") %>">
+                        <button type="submit">Make Two-Way Reservation</button>
+                    </form>
+                </td>
+            </tr>
+            <% 
+                        }
                     }
-                    stopRs.close();
-                    stopStmt.close();
-
-                    // Remove trailing comma from stops
-                    if (stops.length() > 0) stops.setLength(stops.length() - 2);
-
-                    out.println("<tr>");
-                    out.println("<td>" + name + "</td>");
-                    out.println("<td>" + origin + "</td>");
-                    out.println("<td>" + destination + "</td>");
-                    out.println("<td>" + originTime + "</td>");
-                    out.println("<td>" + destTime + "</td>");
-                    out.println("<td>$" + baseFare + "</td>");
-                    out.println("<td>" + stops + "</td>");
-                    out.println("</tr>");
-                }
-            } finally {
-                if (rs != null) rs.close();
-                if (stmt != null) stmt.close();
-                if (conn != null) conn.close();
-            }
-        %>
+                } 
+            %>
+        <% } %>
+        <% if (!hasSchedules) { %>
+        <tr>
+            <td colspan="8">No train schedules available.</td>
+        </tr>
+        <% } %>
     </table>
+    <br>
 </body>
 </html>
+<%
+    } catch (Exception e) {
+        e.printStackTrace(new PrintWriter(out)); // Exception handling
+        out.println("<h3>Error occurred while processing the request.</h3>");
+    } finally {
+        if (rs != null) rs.close();
+        if (stmt != null) stmt.close();
+        if (conn != null) conn.close();
+    }
+%>
